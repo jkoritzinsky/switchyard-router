@@ -12,6 +12,7 @@ from switchyard.lib.userlib import *
 class Router(object):
     def __init__(self, net):
         self.net = net
+        self.arp_cache = {}
         # other initialization stuff here
 
 
@@ -39,12 +40,18 @@ class Router(object):
         if arp and arp.operation == ArpOperation.Request:
             try:
                 iface = self.net.interface_by_ipaddr(arp.targetprotoaddr)
+
+                self.record_in_arp_cache(arp.senderprotoaddr, arp.senderhwaddr)
+
                 pkt = create_ip_arp_reply(iface.ethaddr, arp.senderhwaddr, iface.ipaddr, arp.senderprotoaddr)
                 self.net.send_packet(dev, pkt)
             except KeyError:
                 pass
         else:
             pass
+
+    def record_in_arp_cache(self, ipaddr, ethaddr):
+        self.arp_cache[ipaddr] = ethaddr
 
 
 def main(net):
