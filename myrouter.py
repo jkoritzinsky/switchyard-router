@@ -33,7 +33,18 @@ class Router(object):
 
             if gotpkt:
                 log_debug("Got a packet: {}".format(str(pkt)))
-
+                self.process_packet(dev, pkt)
+    def process_packet(self, dev, pkt):
+        arp = pkt.get_header(Arp)
+        if arp and arp.operation == ArpOperation.Request:
+            try:
+                iface = self.net.interface_by_ipaddr(arp.targetprotoaddr)
+                pkt = create_ip_arp_reply(iface.ethaddr, arp.senderhwaddr, iface.ipaddr, arp.senderprotoaddr)
+                self.net.send_packet(dev, pkt)
+            except KeyError:
+                pass
+        else:
+            pass
 
 
 def main(net):
