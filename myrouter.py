@@ -111,7 +111,7 @@ class Router(object):
         entry = self.get_forwarding_entry(ip.dst)
         if entry:
             log_debug("Found forwarding entry for IP {}. {}".format(ip.dst, entry))
-            self.forwarder.send_packet(new_pkt, entry.next_hop, entry.interface)
+            self.forwarder.send_packet(new_pkt, entry.next_hop or ip.dst, entry.interface)
         else:
             pass # Destination Unreachable
 
@@ -145,7 +145,11 @@ class Router(object):
         log_debug("Best fit is {}".format(best_fit))
         return best_fit
 
-def create_forwarding_table(filename):
+def create_forwarding_table(net, filename):
+    for iface in net.interfaces():
+        network_addr = IPv4Address(int(iface.ipaddr) & int(iface.netmask))
+        yield ForwardingEntry(IPv4Network("{}/{}".format(network_addr, iface.netmask)), None, iface.name)
+
     with open(filename, 'rt') as csvfile:
         reader = csv.reader(csvfile, delimiter=' ')
         for row in reader:
@@ -160,6 +164,6 @@ def main(net):
     Main entry point for router.  Just create Router
     object and get it going.
     '''
-    r = Router(net, create_forwarding_table('forwarding_table.txt'))
+    r = Router(net, create_forwarding_table(net, 'forwarding_table.txt'))
     r.router_main()
     net.shutdown()
