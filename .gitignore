@@ -102,3 +102,5 @@ ENV/
 
 # Switchyard
 *.srpy
+
+forwarding_table.txt
