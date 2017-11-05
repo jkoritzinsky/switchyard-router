@@ -20,14 +20,14 @@ class PendingPackets():
         self.num_req = 0
         self.iface = iface
         self.last_req_time = 0
-    
+
 
 class ArpBackedForwarder(object):
     def __init__(self, net):
         self.cache = {}
         self.net = net
         self.pending_packets = {}
-    
+
     def send_packet(self, pkt, next_hop, outbound_iface):
         if next_hop in self.cache:
             src = self.net.interface_by_name(outbound_iface).ethaddr
@@ -35,14 +35,14 @@ class ArpBackedForwarder(object):
             eth_header = Ethernet(src= src, ethertype = ethertype)
             pkt[pkt.get_header_index(Ethernet)] = eth_header
             eth_header.dst = self.cache[next_hop]
-            self.net.send_packet(outbound_iface, pkt)            
+            self.net.send_packet(outbound_iface, pkt)
         else:
             if next_hop in self.pending_packets:
                 self.pending_packets[next_hop].pkts.append(pkt)
             else:
                 self.pending_packets[next_hop] = PendingPackets(pkt, outbound_iface)
                 self.make_arp_request(next_hop, outbound_iface)
-    
+
     def make_arp_request(self, ipaddr, iface):
         self.pending_packets[ipaddr].num_req += 1
         self.pending_packets[ipaddr].last_req_time = time.time()
@@ -74,7 +74,7 @@ class Router(object):
         # other initialization stuff here
 
 
-    def router_main(self):    
+    def router_main(self):
         '''
         Main method for router; we stay in a loop in this method, receiving
         packets until the end of time.
@@ -101,6 +101,8 @@ class Router(object):
             self.process_arp(dev, pkt.get_header(Arp))
         elif pkt.has_header(IPv4):
             self.process_ip(dev, pkt)
+        elif pkt.has_header(ICMP):
+            self.process_icmp()
 
     def process_ip(self, dev, pkt):
         new_pkt = deepcopy(pkt)
@@ -144,6 +146,11 @@ class Router(object):
                     log_debug("New best fit for {} is {}".format(dest_ip, entry))
         log_debug("Best fit is {}".format(best_fit))
         return best_fit
+
+    def process_icmp(self, dev, pkt):
+        reply = ICMP()
+        reply.icmptype = ICMPType.EchoReply
+        reply.EchoReply = pkt.icmp.icmpdata.sequence
 
 def create_forwarding_table(net, filename):
     for iface in net.interfaces():
