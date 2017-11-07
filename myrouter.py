@@ -56,6 +56,7 @@ class ArpBackedForwarder(object):
                 if pending_packets.num_req == 5:
                     del self.pending_packets[ipaddr]
                     pass # Send ICMP failure response
+                    #3 ICMP destination host unreachable
                 else:
                     self.make_arp_request(ipaddr, pending_packets.iface)
 
@@ -110,12 +111,14 @@ class Router(object):
         ip.ttl -= 1
         if not ip.ttl:
             pass # TTL = 0 case
+            #2 ICMP time exceeded
         entry = self.get_forwarding_entry(ip.dst)
         if entry:
             log_debug("Found forwarding entry for IP {}. {}".format(ip.dst, entry))
             self.forwarder.send_packet(new_pkt, entry.next_hop or ip.dst, entry.interface)
         else:
             pass # Destination Unreachable
+            #1 ICMP destination network unreachable
 
     def process_arp(self, dev, arp):
         self.record_in_arp_cache(arp.senderprotoaddr, arp.senderhwaddr)
@@ -148,9 +151,11 @@ class Router(object):
         return best_fit
 
     def process_icmp(self, dev, pkt):
+        #If ping respond to ping
         reply = ICMP()
         reply.icmptype = ICMPType.EchoReply
         reply.EchoReply = pkt.icmp.icmpdata.sequence
+        #else ICMP destination port unreachable
 
 def create_forwarding_table(net, filename):
     for iface in net.interfaces():
