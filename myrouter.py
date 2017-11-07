@@ -119,6 +119,8 @@ class Router(object):
         else:
             pass # Destination Unreachable
             #1 ICMP destination network unreachable
+            #entry = self.get_forwarding_entry(ip.src)
+            #self.forwarder.send_packet(new_pkt, entry.next_hop or ip.src, entry.interface)
 
     def process_arp(self, dev, arp):
         self.record_in_arp_cache(arp.senderprotoaddr, arp.senderhwaddr)
@@ -152,10 +154,15 @@ class Router(object):
 
     def process_icmp(self, dev, pkt):
         #If ping respond to ping
-        reply = ICMP()
-        reply.icmptype = ICMPType.EchoReply
-        reply.EchoReply = pkt.icmp.icmpdata.sequence
+        i = pkt.get_header_index(ICMP)
+        if pkt[i].icmptype == ICMPType.EchoRequest:
+            reply = ICMP()
+            reply.icmptype = ICMPType.EchoReply
+            reply.icmpdata.data = pkt.to_bytes()[:28]
+            #make new IP packet with reply ICMP header
+            #process_ip(newIP)
         #else ICMP destination port unreachable
+        # ICMPTypeCodeMap[ICMPType.DestinationUnreachable]
 
 def create_forwarding_table(net, filename):
     for iface in net.interfaces():
