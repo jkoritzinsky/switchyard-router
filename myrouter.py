@@ -206,21 +206,21 @@ class Router(object):
             new_pkt = ip + reply
             process_ip(dev, new_pkt)
 
-    def make_icmp_message(dev, origpkt, errtype):
-        i = origpkt.get_header_index(Ethernet)
-        del origpkt[i]
-        reply = ICMP()
-        reply.icmptype = errtype
-        reply.icmpdata.data = origpkt.to_bytes()[:28]
-        #make new IP packet with reply ICMP header
-        ip = IPv4()
-        ip.protocol = IPProtocol.ICMP
-        # set ip.src, ip.dst, and ip.ttl
-        ip.dst = origpkt[pkt.get_header(IPv4)].src
-        ip.src = origpkt[pkt.get_header(IPv4)].dst
-        ip.ttl = origpkt[pkt.get_header(IPv4)].ttl + 5
-        new_pkt = ip + reply
-        process_ip(dev, new_pkt)
+    # def make_icmp_message(dev, origpkt, errtype):
+    #     i = origpkt.get_header_index(Ethernet)
+    #     del origpkt[i]
+    #     reply = ICMP()
+    #     reply.icmptype = errtype
+    #     reply.icmpdata.data = origpkt.to_bytes()[:28]
+    #     #make new IP packet with reply ICMP header
+    #     ip = IPv4()
+    #     ip.protocol = IPProtocol.ICMP
+    #     # set ip.src, ip.dst, and ip.ttl
+    #     ip.dst = origpkt[pkt.get_header(IPv4)].src
+    #     ip.src = origpkt[pkt.get_header(IPv4)].dst
+    #     ip.ttl = origpkt[pkt.get_header(IPv4)].ttl + 5
+    #     new_pkt = ip + reply
+    #     process_ip(dev, new_pkt)
 
 def create_forwarding_table(net, filename):
     for iface in net.interfaces():
