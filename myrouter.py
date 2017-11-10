@@ -11,6 +11,7 @@ import csv
 from copy import deepcopy
 from collections import namedtuple
 from switchyard.lib.userlib import *
+from switchyard.lib.packet import *
 
 ForwardingEntry = namedtuple("ForwardingEntry", ["network", "next_hop", "interface"])
 
@@ -57,7 +58,7 @@ class ArpBackedForwarder(object):
                     # Send ICMP failure response
                     #3 ICMP destination host unreachable
                     router.send_icmp_message(pending_packets[ipaddr], pending_packets[ipaddr], ICMPType.DestinationUnreachable, ICMPTypeCodeMap[ICMPType.DestinationUnreachable].HostUnreachable)
-                    del self.pending_packets[ipaddr]    
+                    del self.pending_packets[ipaddr]
                 else:
                     self.make_arp_request(ipaddr, pending_packets.iface)
 
@@ -131,7 +132,7 @@ class Router(object):
             log_debug("Found forwarding entry for IP {}. {}".format(ip.dst, entry))
             self.forwarder.send_packet(pkt, entry.next_hop or ip.dst, entry.interface)
         else:
-            self.send_icmp_message(dev, pkt, ICMPType.DestinationUnreachable, ICMPTypeCodeMap[ICMPType.DestinationUnreachable].NetworkUnreachable)
+            self.send_icmp_message(pkt, pkt, ICMPType.DestinationUnreachable, ICMPTypeCodeMap[ICMPType.DestinationUnreachable].NetworkUnreachable)
             #1 ICMP destination network unreachable
 
     def process_arp(self, dev, arp):
@@ -190,7 +191,8 @@ class Router(object):
             #ICMP pkt was destined to the router but not ping
             self.send_icmp_message(dev, pkt, ICMPType.DestinationUnreachable, ICMPTypeCodeMap[ICMPType.DestinationUnreachable].PortUnreachable)
 
-    def send_icmp_message(dev, pkt, errtype, errcode):
+    def send_icmp_message(self, dev, pkt, errtype, errcode):
+        temp_pkt = deepcopy(pkt)
         i = pkt.get_header_index(Ethernet)
         del pkt[i]
         reply = ICMP()
@@ -205,7 +207,9 @@ class Router(object):
         #TODO what is routers ip address
         ip.src = message_ip.dst
         ip.ttl = message_ip.ttl + 5
-        new_pkt = ip + reply
+        ethernet = Ethernet()
+        ethernet.ethertype = temp_pkt.get_header(Ethernet).ethertype
+        new_pkt = ethernet + ip + reply
         self.forward_packet(dev, new_pkt)
 
 def create_forwarding_table(net, filename):
