@@ -68,10 +68,11 @@ class ArpBackedForwarder(object):
             del self.pending_packets[ipaddr]
 
 class Router(object):
-    def __init__(self, net, table):
+    def __init__(self, net, table, ips):
         self.net = net
         self.forwarder = ArpBackedForwarder(net)
         self.forwarding_table = list(table)
+        self.ips = ips
         # other initialization stuff here
 
 
@@ -101,21 +102,32 @@ class Router(object):
         if pkt.has_header(Arp):
             self.process_arp(dev, pkt.get_header(Arp))
         elif pkt.has_header(IPv4):
-            self.process_ip(dev, pkt)
-        elif pkt.has_header(ICMP):
-            self.process_icmp()
+            if not self.forward_if_needed(dev, pkt):
+                self.process_packet_for_self(dev, pkt)
 
-    def process_ip(self, dev, pkt):
+    def process_packet_for_self(self, dev, pkt):
+        if pkt.has_header(ICMP):
+            self.process_icmp(dev, pkt)
+
+    def forward_if_needed(self, dev, pkt):
         new_pkt = deepcopy(pkt)
         ip = new_pkt.get_header(IPv4)
         ip.ttl -= 1
         if not ip.ttl:
             pass # TTL = 0 case
             #2 ICMP time exceeded
+        if ip.dst in self.ips:
+            return False
+        else:
+            self.forward_packet(dev, new_pkt)
+            return True
+
+    def forward_packet(self, incoming_iface, pkt):
+        ip = pkt.get_header(IPv4)
         entry = self.get_forwarding_entry(ip.dst)
         if entry:
             log_debug("Found forwarding entry for IP {}. {}".format(ip.dst, entry))
-            self.forwarder.send_packet(new_pkt, entry.next_hop or ip.dst, entry.interface)
+            self.forwarder.send_packet(pkt, entry.next_hop or ip.dst, entry.interface)
         else:
             pass # Destination Unreachable
             #1 ICMP destination network unreachable
@@ -134,7 +146,6 @@ class Router(object):
             ip.src = pkt[pkt.get_header(IPv4)].dst
             ip.ttl = pkt[pkt.get_header(IPv4)].ttl + 5
             new_pkt = ip + reply
-            process_ip(dev, new_pkt)
             entry = self.get_forwarding_entry(ip.src)
             self.forwarder.send_packet(new_pkt, entry.next_hop or ip.src, entry.interface)
 
@@ -174,19 +185,22 @@ class Router(object):
         if pkt[i].icmptype == ICMPType.EchoRequest:
             #make ICMP EchoReply header
             reply = ICMP()
-            reply.icmptype = ICMPType.EchoReply
-            reply.sequence = pkt.ICMPEchoRequest.sequence
-            reply.indentifier = pkt.ICMPEchoRequest.identifier
-            reply.icmpdata.data = pkt.to_bytes()
+            reply.icmpdata = ICMPEchoReply()
+            reply.icmpdata.sequence = pkt[i].icmpdata.sequence
+            reply.icmpdata.indentifier = pkt[i].icmpdata.identifier
+            reply.icmpdata.data = pkt[i].icmpdata.data
             #make new IP packet with reply ICMP header
+            request_ip = pkt.get_header(IPv4)
             ip = IPv4()
             ip.protocol = IPProtocol.ICMP
             # set ip.src, ip.dst, and ip.ttl
-            ip.dst = pkt[pkt.get_header(IPv4)].src
-            ip.src = pkt[pkt.get_header(IPv4)].dst
-            ip.ttl = pkt[pkt.get_header(IPv4)].ttl + 5
-            new_pkt = ip + reply
-            process_ip(dev, new_pkt)
+            ip.dst = request_ip.src
+            ip.src = request_ip.dst
+            ip.ttl = request_ip.ttl + 5
+            ethernet = Ethernet()
+            ethernet.ethertype = pkt.get_header(Ethernet).ethertype
+            new_pkt = ethernet + ip + reply
+            self.forward_packet(dev, new_pkt)
         else:
             #ICMP destination port unreachable
             #ICMP pkt was destined to the router but not ping
@@ -241,6 +255,6 @@ def main(net):
     Main entry point for router.  Just create Router
     object and get it going.
     '''
-    r = Router(net, create_forwarding_table(net, 'forwarding_table.txt'))
+    r = Router(net, create_forwarding_table(net, 'forwarding_table.txt'), [iface.ipaddr for iface in net.interfaces()])
     r.router_main()
     net.shutdown()
