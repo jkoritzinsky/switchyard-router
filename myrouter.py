@@ -20,14 +20,14 @@ class PendingPackets():
         self.num_req = 0
         self.iface = iface
         self.last_req_time = 0
-    
+
 
 class ArpBackedForwarder(object):
     def __init__(self, net):
         self.cache = {}
         self.net = net
         self.pending_packets = {}
-    
+
     def send_packet(self, pkt, next_hop, outbound_iface):
         if next_hop in self.cache:
             src = self.net.interface_by_name(outbound_iface).ethaddr
@@ -35,14 +35,14 @@ class ArpBackedForwarder(object):
             eth_header = Ethernet(src= src, ethertype = ethertype)
             pkt[pkt.get_header_index(Ethernet)] = eth_header
             eth_header.dst = self.cache[next_hop]
-            self.net.send_packet(outbound_iface, pkt)            
+            self.net.send_packet(outbound_iface, pkt)
         else:
             if next_hop in self.pending_packets:
                 self.pending_packets[next_hop].pkts.append(pkt)
             else:
                 self.pending_packets[next_hop] = PendingPackets(pkt, outbound_iface)
                 self.make_arp_request(next_hop, outbound_iface)
-    
+
     def make_arp_request(self, ipaddr, iface):
         self.pending_packets[ipaddr].num_req += 1
         self.pending_packets[ipaddr].last_req_time = time.time()
@@ -56,6 +56,7 @@ class ArpBackedForwarder(object):
                 if pending_packets.num_req == 5:
                     del self.pending_packets[ipaddr]
                     pass # Send ICMP failure response
+                    #3 ICMP destination host unreachable
                 else:
                     self.make_arp_request(ipaddr, pending_packets.iface)
 
@@ -74,7 +75,7 @@ class Router(object):
         # other initialization stuff here
 
 
-    def router_main(self):    
+    def router_main(self):
         '''
         Main method for router; we stay in a loop in this method, receiving
         packets until the end of time.
@@ -101,6 +102,8 @@ class Router(object):
             self.process_arp(dev, pkt.get_header(Arp))
         elif pkt.has_header(IPv4):
             self.process_ip(dev, pkt)
+        elif pkt.has_header(ICMP):
+            self.process_icmp()
 
     def process_ip(self, dev, pkt):
         new_pkt = deepcopy(pkt)
@@ -108,12 +111,32 @@ class Router(object):
         ip.ttl -= 1
         if not ip.ttl:
             pass # TTL = 0 case
+            #2 ICMP time exceeded
         entry = self.get_forwarding_entry(ip.dst)
         if entry:
             log_debug("Found forwarding entry for IP {}. {}".format(ip.dst, entry))
             self.forwarder.send_packet(new_pkt, entry.next_hop or ip.dst, entry.interface)
         else:
             pass # Destination Unreachable
+            #1 ICMP destination network unreachable
+            i = pkt.get_header_index(Ethernet)
+            del pkt[i]
+            reply = ICMP()
+            reply.icmptype = ICMPType.DestinationUnreachable
+            reply.icmpcode = ICMPTypeCodeMap[ICMPType.DestinationUnreachable].NetworkUnreachable
+            reply.icmpdata.data = pkt.to_bytes()[:28]
+            #make new IP packet with reply ICMP header
+            ip = IPv4()
+            ip.protocol = IPProtocol.ICMP
+            # set ip.src, ip.dst, and ip.ttl
+            # TODO set src to routers IP?
+            ip.dst = pkt[pkt.get_header(IPv4)].src
+            ip.src = pkt[pkt.get_header(IPv4)].dst
+            ip.ttl = pkt[pkt.get_header(IPv4)].ttl + 5
+            new_pkt = ip + reply
+            process_ip(dev, new_pkt)
+            entry = self.get_forwarding_entry(ip.src)
+            self.forwarder.send_packet(new_pkt, entry.next_hop or ip.src, entry.interface)
 
     def process_arp(self, dev, arp):
         self.record_in_arp_cache(arp.senderprotoaddr, arp.senderhwaddr)
@@ -144,6 +167,60 @@ class Router(object):
                     log_debug("New best fit for {} is {}".format(dest_ip, entry))
         log_debug("Best fit is {}".format(best_fit))
         return best_fit
+
+    def process_icmp(self, dev, pkt):
+        #If ping respond to ping
+        i = pkt.get_header_index(ICMP)
+        if pkt[i].icmptype == ICMPType.EchoRequest:
+            #make ICMP EchoReply header
+            reply = ICMP()
+            reply.icmptype = ICMPType.EchoReply
+            reply.sequence = pkt.ICMPEchoRequest.sequence
+            reply.indentifier = pkt.ICMPEchoRequest.identifier
+            reply.icmpdata.data = pkt.to_bytes()
+            #make new IP packet with reply ICMP header
+            ip = IPv4()
+            ip.protocol = IPProtocol.ICMP
+            # set ip.src, ip.dst, and ip.ttl
+            ip.dst = pkt[pkt.get_header(IPv4)].src
+            ip.src = pkt[pkt.get_header(IPv4)].dst
+            ip.ttl = pkt[pkt.get_header(IPv4)].ttl + 5
+            new_pkt = ip + reply
+            process_ip(dev, new_pkt)
+        else:
+            #ICMP destination port unreachable
+            #ICMP pkt was destined to the router but not ping
+            i = pkt.get_header_index(Ethernet)
+            del pkt[i]
+            reply = ICMP()
+            reply.icmptype = ICMPType.DestinationUnreachable
+            reply.icmpcode = ICMPTypeCodeMap[ICMPType.DestinationUnreachable].PortUnreachable
+            reply.icmpdata.data = pkt.to_bytes()[:28]
+            #make new IP packet with reply ICMP header
+            ip = IPv4()
+            ip.protocol = IPProtocol.ICMP
+            # set ip.src, ip.dst, and ip.ttl
+            ip.dst = pkt[pkt.get_header(IPv4)].src
+            ip.src = pkt[pkt.get_header(IPv4)].dst
+            ip.ttl = pkt[pkt.get_header(IPv4)].ttl + 5
+            new_pkt = ip + reply
+            process_ip(dev, new_pkt)
+
+    # def make_icmp_message(dev, origpkt, errtype):
+    #     i = origpkt.get_header_index(Ethernet)
+    #     del origpkt[i]
+    #     reply = ICMP()
+    #     reply.icmptype = errtype
+    #     reply.icmpdata.data = origpkt.to_bytes()[:28]
+    #     #make new IP packet with reply ICMP header
+    #     ip = IPv4()
+    #     ip.protocol = IPProtocol.ICMP
+    #     # set ip.src, ip.dst, and ip.ttl
+    #     ip.dst = origpkt[pkt.get_header(IPv4)].src
+    #     ip.src = origpkt[pkt.get_header(IPv4)].dst
+    #     ip.ttl = origpkt[pkt.get_header(IPv4)].ttl + 5
+    #     new_pkt = ip + reply
+    #     process_ip(dev, new_pkt)
 
 def create_forwarding_table(net, filename):
     for iface in net.interfaces():
