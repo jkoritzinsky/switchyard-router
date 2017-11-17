@@ -208,8 +208,8 @@ class Router(object):
     def send_icmp_message(self, dev, pkt, icmpheader):
         icmpheader.icmpdata.origdgramlen = len(pkt)
         i = pkt.get_header_index(Ethernet)
-        #ethernet = Ethernet()
-        #ethernet.ethertype = pkt.get_header(Ethernet).ethertype
+        # We need to re-increment the TTL so the packet contents are the same as the original packet
+        pkt.get_header(IPv4).ttl += 1
         ethernet = Ethernet(src=pkt[i].dst, dst=pkt[i].src, ethertype = EtherType.IPv4)
         del pkt[i]
         icmpheader.icmpdata.data = pkt.to_bytes()[:28]
