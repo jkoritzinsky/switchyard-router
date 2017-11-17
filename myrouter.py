@@ -24,10 +24,11 @@ class PendingPackets():
 
 
 class ArpBackedForwarder(object):
-    def __init__(self, net):
+    def __init__(self, net, router):
         self.cache = {}
         self.net = net
         self.pending_packets = {}
+        self.router = router
 
     def send_packet(self, pkt, next_hop, outbound_iface):
         if next_hop in self.cache:
@@ -60,7 +61,7 @@ class ArpBackedForwarder(object):
                     icmp = ICMP()
                     icmp.icmptype = ICMPType.DestinationUnreachable
                     icmp.icmpcode = ICMPTypeCodeMap[icmp.icmptype].HostUnreachable
-                    router.send_icmp_message(pending_packets[ipaddr], pending_packets[ipaddr], icmp)
+                    self.router.send_icmp_message(pending_packets[ipaddr], pending_packets[ipaddr], icmp)
                     del self.pending_packets[ipaddr]
                 else:
                     self.make_arp_request(ipaddr, pending_packets.iface)
@@ -75,7 +76,7 @@ class ArpBackedForwarder(object):
 class Router(object):
     def __init__(self, net, table, ips):
         self.net = net
-        self.forwarder = ArpBackedForwarder(net)
+        self.forwarder = ArpBackedForwarder(net, self)
         self.forwarding_table = list(table)
         self.ips = ips
         # other initialization stuff here
@@ -125,8 +126,10 @@ class Router(object):
             icmp.icmpcode = ICMPTypeCodeMap[ICMPType.TimeExceeded]
             self.send_icmp_message(dev, pkt, icmp)
         if ip.dst in self.ips:
+            log_debug("Packet for me")
             return False
         else:
+            log_debug("Forwarding Packet")
             self.forward_packet(dev, new_pkt)
             return True
 
