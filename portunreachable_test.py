@@ -30,16 +30,4 @@ reply.icmpdata.data = b'some payload'
 p += reply
 scenario.expect(PacketInputEvent('eth0', p),"EchoReply")
 
-x = Ethernet(src="ab:cd:ef:ab:cd:ef", dst="ab:cd:ef:ab:cd:ef") + \
-IPv4(src="5.6.7.8", dst="1.2.3.4", protocol=IPProtocol.ICMP, ttl=4)
-reply = ICMP()
-reply.icmptype = ICMPType.DestinationUnreachable
-reply.icmpcode = ICMPTypeCodeMap[reply.icmptype].PortUnreachable
-del p[p.get_header_index(Ethernet)]
-reply.icmpdata.data = p.to_bytes()[:28]
-x += reply
-scenario.expect(PacketOutputEvent('eth0', x),"ICMP")
-
-arp_rep = create_ip_arp_reply("00:11:22:ab:cd:ef","00:11:22:ab:cd:ef", "5.6.7.8", "5.6.7.8")
-scenario.expect(PacketInputEvent('eth1', arp_rep),"Arp reply")
 #goes into loop of sending packets to itself

@@ -119,11 +119,10 @@ class Router(object):
         ip = new_pkt.get_header(IPv4)
         ip.ttl -= 1
         if not ip.ttl:
-            # TTL = 0 case
             #2 ICMP time exceeded
             icmp = ICMP()
-            icmp.icmptype = ICMPType.TimeExceeded
-            icmp.icmpcode = ICMPTypeCodeMap[icmp.icmptype]
+            icmp.icmptype = 11
+            icmp.icmpcode = ICMPTypeCodeMap[ICMPType.TimeExceeded]
             self.send_icmp_message(dev, pkt, icmp)
         if ip.dst in self.ips:
             return False

@@ -17,9 +17,18 @@ scenario.add_interface('eth1', '00:11:22:ab:cd:ef', '5.6.7.8', '255.255.0.0')
 scenario.add_interface('eth2', 'ab:cd:ef:00:11:22', '9.10.11.12', '255.255.255.0')
 scenario.add_interface('eth3', '11:11:00:ef:11:22', '13.14.15.16', '255.255.255.0')
 
-p = Ethernet(src="ab:cd:ef:ab:cd:ef", dst="00:11:22:ab:cd:ef") + \
-IPv4(src="1.2.3.4", dst="5.6.7.8", protocol=IPProtocol.UDP, ttl=1) + \
-UDP(src=1234, dst=5678) + b'some payload'
-
-# test case 4:
 # 3 ICMP destination host unreachable should be returned
+p = Ethernet(src="ab:cd:ef:ab:cd:ef", dst="00:11:22:ab:cd:ef") + \
+IPv4(src="1.2.3.4", dst="5.9.2.3", protocol=IPProtocol.ICMP, ttl=5) + \
+b'some payload'
+scenario.expect(PacketInputEvent('eth0', p),"A udp packet destined to 5.9.2.3 arrives on port eth0")
+
+icmp = ICMP()
+icmp.icmptype = ICMPType.DestinationUnreachable
+icmp.icmpcode = ICMPTypeCodeMap[icmp.icmptype].NetworkUnreachable
+del p[p.get_header_index(Ethernet)]
+icmp.icmpdata.data = p.to_bytes()[:28]
+p = Ethernet(src="ab:cd:ef:ab:cd:ef", dst="ab:cd:ef:ab:cd:ef") + \
+IPv4(src="5.9.2.3", dst="1.2.3.4", protocol=IPProtocol.ICMP, ttl=4) + \
+icmp
+scenario.expect(PacketInputEvent('eth0', p),"ICMP NetowrkUnreachable destined to 1.2.3.4 arives on port etho")
